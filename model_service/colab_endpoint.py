@@ -38,10 +38,9 @@ class ModelInference(object):
         single_model = WhisperModel("base", device="cuda", compute_type="int8_float16")
         self.model = BatchedInferencePipeline(model=single_model)
 
-    def forward(self, cached_local_path:str, file_name:str):
+    async def forward(self, cached_local_path:str, file_name:str):
         result = self.model.transcribe(cached_local_path)
         return result
-
 
 
 NGROK_AUTH_TOKEN = os.environ['NGROK_AUTH_TOKEN']
