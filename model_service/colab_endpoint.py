@@ -99,7 +99,7 @@ def generator_wrapper(file_generator: Generator, file_kwargs: Dict[str,str]):
                     "end": ele.end,
                     "text": ele.text
                 }
-            })
+            }).encode() + b"\n"
 
 async def streaming_segements_result(
         master_results: List[Generator], 
@@ -144,7 +144,7 @@ async def inference(files: List[UploadFile], request: Request):
 
         return StreamingResponse(
             content= streaming_segements_result(master_results,_kwarg_list), 
-            media_type="application/json"
+            media_type="application/x-ndjson"
         )
 
 
