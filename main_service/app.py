@@ -3,8 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
+import uvicorn
+import asyncio
 
-from routers import user_router, video_router
+from routers import video_router
 
 app = FastAPI()
 
@@ -22,11 +24,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(user_router)
+# app.include_router(user_router)
 app.include_router(video_router)
 
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory="main_service/templates")
 
 @app.get("/")
 def root(request: Request):
-    return templates.TemplateResponse("authentication.html", {"request": request})
+    return templates.TemplateResponse("test.html", {"request": request})
+
+
+async def main_run():
+    config = uvicorn.Config("app:app",
+    	port=8000, 
+    	log_level="info", 
+    	reload=True,
+    	)
+    server = uvicorn.Server(config)
+    await server.serve()
+
+if __name__ == "__main__":
+    asyncio.run(main_run())

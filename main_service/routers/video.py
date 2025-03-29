@@ -1,6 +1,8 @@
 import json
 import os
+from contextlib import asynccontextmanager
 from fastapi import (
+    FastAPI,
     APIRouter, 
     HTTPException, 
     Response,
@@ -9,31 +11,44 @@ from fastapi import (
     Request,
     UploadFile
 )
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 
-from dependencies import get_current_user_id 
+# from dependencies import get_current_user_id 
 from loguru import logger
 from typing import List,Union
 import asyncio
 
-from ...database.sql.orm_model import TranscriptionHistory
-from ...database.sql.db import get_db
-from video_utils.video_service import TranscriptionService
-from video_utils.task_queue import ConnectionManager
-from schemas.video import TranscriptionHistoryItem,GeminiRequest,VideoRequest
+# from database.sql.orm_model import TranscriptionHistory
+# from database.sql.db import get_db
+# from video_utils.video_service import TranscriptionService
+
+from .video_router_components.task_queue import ConnectionManager
+from .video_router_components.schemas.video_requests import MultiPartData, PartData
+from .video_router_components.schemas.video import TranscriptionHistoryItem, GeminiRequest, VideoRequest
+
+from setting import SETTINGS
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.manager = ConnectionManager(
+        model_service_url = "http://"+SETTINGS.DEPLOY_DOMAIN, 
+        model_service_endpoint = SETTINGS.ENDPOINT_ROUTER
+    )
+    app.manager.start_background()
+    yield
+    await app.manager.shutdown_background()
 
 
-connection_manager = ConnectionManager()
-video_router = APIRouter()
-transcription_service = TranscriptionService(model_name="tiny")
+video_router = APIRouter(lifespan = lifespan)
 
 
-@video_router.post("/transcribe")
+@video_router.post("/uploads")
 async def transcribe_file(
         videoInputs: List[UploadFile],
-        db: Session = Depends(get_db), 
-        user_id: int = Depends(get_current_user_id)
+        request: Request,
+        # db: Session = Depends(get_db), 
+        user_id: int  = 1 #= Depends(get_current_user_id)
     ):
     r"""
     Main router for `video_router`.
@@ -47,47 +62,28 @@ async def transcribe_file(
             to `model_service`, do translation) as background tasks
         - return status to UI immediately (no waiting for transcript files)
     """
-
     _parse_data = []
     for _ith, _file in enumerate(videoInputs):
         content = await _file.read()
-        _parse_data.append(
-            ("files", (_file.filename, content, _file.content_type))
+        
+        _parse_data.append(MultiPartData(
+            key= "files",
+            partdata = PartData(
+                file_name = _file.filename, 
+                content = content, 
+                content_type = _file.content_type)
+            )
+        )
+        request.app.manager.object_storage.upload_video(
+            user_id = user_id,
+            randomzied_file_name = _file.filename,
+            file_content = content
         )
 
-    await connection_manager.add_user_task(
-        user_id = user_id, 
-        parse_data = _parse_data
-    )
-    
-    segments, text = await TranscriptionService.transcribe_and_save(file, db, user_id=user_id)
-    return {"status": "done", "segments": segments, "text": text}
+    await request.app.manager.add_user_task(user_id, _parse_data)
+    # segments, text = await TranscriptionService.transcribe_and_save(file, db, user_id=user_id)
+    return JSONResponse(content= {"message": "Successfully upload videos"})
 
-
-async def _pull_from_queue(user_id:int, 
-                           timeout: float = 0.9, 
-                           batch_size:int = 5
-    ):
-    r"""
-    Pull out 5 requests from `task_queue`
-    """
-    items = []
-    for _ in range(batch_size):
-        try:
-            item = await asyncio.wait_for(
-                connection_manager.get_item_by_user(user_id= user_id), 
-                timeout=timeout / batch_size
-            )
-            items.append(item)
-        except (asyncio.TimeoutError, asyncio.QueueEmpty):
-            break
-        except Exception as e:
-            break
-    
-    if len(items) > 0:
-        return items
-    else:
-        return None
 
 @video_router.get("/stream_status")
 async def update_status(request: Request):
@@ -106,13 +102,7 @@ async def update_status(request: Request):
                     break
                 
                 await asyncio.sleep(0.1)
-                batch = await _pull_from_queue()
-                if batch:
-                    for (videos, _ ) in batch:
-                        yield 'data: {}\n\n'.format(",".join(videos))
-
-                else:
-                    yield 'data: {}\n\n'.format("not get batch")
+                yield 'data: {}\n\n'.format("not get batch")
 
             except (asyncio.CancelledError, KeyboardInterrupt):
                 break
@@ -133,91 +123,91 @@ async def update_status(request: Request):
 #     # Gọi service để xóa lịch sử
 #     return TranscriptionService.delete_transcription_history(db=db, history_id=history_id, user_id=user_id)
 
-@video_router.get(
-        "/transcription_histories", 
-        response_model=List[TranscriptionHistoryItem])
-def get_transcription_histories(
-        db: Session = Depends(get_db),
-        user_id: int = Depends(get_current_user_id)
-    ):
-    histories = TranscriptionService.get_user_history(db, user_id)
-    return histories
+# @video_router.get(
+#         "/transcription_histories", 
+#         response_model=List[TranscriptionHistoryItem])
+# def get_transcription_histories(
+#         db: Session = Depends(get_db),
+#         user_id: int = Depends(get_current_user_id)
+#     ):
+#     histories = TranscriptionService.get_user_history(db, user_id)
+#     return histories
 
-@video_router.get("/video/{video_id}")
-async def get_video(
-        video_id: str, 
-        db: Session = Depends(get_db), 
-        user_id: int = Depends(get_current_user_id)
-    ):
-    video = db.query(TranscriptionHistory).filter(  # Dùng TranscriptionHistory model
-        TranscriptionHistory.id == video_id,
-        TranscriptionHistory.user_id == user_id
-    ).first()
+# @video_router.get("/video/{video_id}")
+# async def get_video(
+#         video_id: str, 
+#         db: Session = Depends(get_db), 
+#         user_id: int = Depends(get_current_user_id)
+#     ):
+#     video = db.query(TranscriptionHistory).filter(  # Dùng TranscriptionHistory model
+#         TranscriptionHistory.id == video_id,
+#         TranscriptionHistory.user_id == user_id
+#     ).first()
 
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found")
+#     if not video:
+#         raise HTTPException(status_code=404, detail="Video not found")
        
-    return FileResponse(
-        video.file_path,
-        media_type="video/mp4",
-        filename=video.video_name
-    )
+#     return FileResponse(
+#         video.file_path,
+#         media_type="video/mp4",
+#         filename=video.video_name
+#     )
 
-@video_router.delete(
-        "/transcribe/history/{history_id}", 
-        status_code=status.HTTP_204_NO_CONTENT)
-async def delete_transcription_history(
-        history_id: int, 
-        db: Session = Depends(get_db), 
-        user_id: int = Depends(get_current_user_id)
-    ):
-    # Find the history entry
-    history = db.query(TranscriptionHistory).filter(
-        TranscriptionHistory.id == history_id,
-        TranscriptionHistory.user_id == user_id
-    ).first()
+# @video_router.delete(
+#         "/transcribe/history/{history_id}", 
+#         status_code=status.HTTP_204_NO_CONTENT)
+# async def delete_transcription_history(
+#         history_id: int, 
+#         db: Session = Depends(get_db), 
+#         user_id: int = Depends(get_current_user_id)
+#     ):
+#     # Find the history entry
+#     history = db.query(TranscriptionHistory).filter(
+#         TranscriptionHistory.id == history_id,
+#         TranscriptionHistory.user_id == user_id
+#     ).first()
     
-    if not history:
-        raise HTTPException(status_code=404, detail="History not found")
+#     if not history:
+#         raise HTTPException(status_code=404, detail="History not found")
     
-    try:
-        # Delete the video file if it exists
-        if history.file_path and os.path.exists(history.file_path):
-            os.remove(history.file_path)
+#     try:
+#         # Delete the video file if it exists
+#         if history.file_path and os.path.exists(history.file_path):
+#             os.remove(history.file_path)
         
-        # Delete from database
-        db.delete(history)
-        db.commit()
+#         # Delete from database
+#         db.delete(history)
+#         db.commit()
         
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+#         return Response(status_code=status.HTTP_204_NO_CONTENT)
         
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error deleting transcription history: {str(e)}"
-        )
+#     except Exception as e:
+#         db.rollback()
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"Error deleting transcription history: {str(e)}"
+#         )
 
-@video_router.get("/transcribe/history/{history_id}")
-async def get_transcription_history(
-        history_id: int,
-        db: Session = Depends(get_db),
-        user_id: int = Depends(get_current_user_id)
-    ):
-    history = db.query(TranscriptionHistory).filter(
-        TranscriptionHistory.id == history_id,
-        TranscriptionHistory.user_id == user_id
-    ).first()
+# @video_router.get("/transcribe/history/{history_id}")
+# async def get_transcription_history(
+#         history_id: int,
+#         db: Session = Depends(get_db),
+#         user_id: int = Depends(get_current_user_id)
+#     ):
+#     history = db.query(TranscriptionHistory).filter(
+#         TranscriptionHistory.id == history_id,
+#         TranscriptionHistory.user_id == user_id
+#     ).first()
     
-    if not history:
-        raise HTTPException(status_code=404, detail="History not found")
+#     if not history:
+#         raise HTTPException(status_code=404, detail="History not found")
     
-    return {
-        "id": history.id,
-        "text": history.text,           
-        "video_duration": history.video_duration,
-        "segment": history.segment  # Thêm trường segment vào response
-    }
+#     return {
+#         "id": history.id,
+#         "text": history.text,           
+#         "video_duration": history.video_duration,
+#         "segment": history.segment  # Thêm trường segment vào response
+#     }
 
 # @video_router.post("/generate_gemini_content")
 # async def generate_gemini_content(req: GeminiRequest):
@@ -245,24 +235,24 @@ async def get_transcription_history(
 #         logger.error(f"Error generating Gemini content: {str(e)}")
 #         raise HTTPException(status_code=500, detail=str(e))
 
-@video_router.post("/transcribe_and_download")
-async def transcribe_file(
-        request: VideoRequest, 
-        db: Session = Depends(get_db), 
-        user_id: int = Depends(get_current_user_id)
-    ):
-    print(f"User ID: {user_id}")  # Debug xem user_id có nhận đúng không
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+# @video_router.post("/transcribe_and_download")
+# async def transcribe_file(
+#         request: VideoRequest, 
+#         db: Session = Depends(get_db), 
+#         user_id: int = Depends(get_current_user_id)
+#     ):
+#     print(f"User ID: {user_id}")  # Debug xem user_id có nhận đúng không
+#     if not user_id:
+#         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Lấy URL từ request JSON
-    video_url = request.url
-    video_path = await TranscriptionService.download_video(video_url)
-    print(video_path)
-    # Gọi hàm async với await
-    await TranscriptionService.transcribe_and_save(video_path, db, user_id=user_id)
+#     # Lấy URL từ request JSON
+#     video_url = request.url
+#     video_path = await TranscriptionService.download_video(video_url)
+#     print(video_path)
+#     # Gọi hàm async với await
+#     await TranscriptionService.transcribe_and_save(video_path, db, user_id=user_id)
 
-    return {"status": "done"}
+#     return {"status": "done"}
 
 # Updated endpoint with more debugging and error handling
 # from translate import Translator

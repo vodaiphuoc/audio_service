@@ -21,3 +21,4 @@ loguru
 modal
 ngrok
 faster-whisper
+firebase-admin

@@ -1,4 +1,4 @@
-from user_router.user import user_router
-from video_router.video import video_router
+from .video import video_router
+# from . user import user_router
 
-__all__ = ["user_router", "video_router"]
+__all__ = ["video_router"]

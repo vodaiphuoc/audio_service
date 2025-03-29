@@ -5,9 +5,15 @@ from fastapi.templating import Jinja2Templates
 from fastapi import Request
 
 
-from ...database.sql.db import get_db
-from schemas.user import UserCreate, UserLogin, ResetPasswordRequest,VerifyOTPRequest
-from user_utils.auth_service import AuthService
+from database.sql.db import get_db
+from user_router_components.schemas.user import (
+    UserCreate, 
+    UserLogin, 
+    ResetPasswordRequest,
+    VerifyOTPRequest
+)
+from user_router_components.user_utils.auth_service import AuthService
+
 
 user_router = APIRouter()
 templates = Jinja2Templates(directory="templates")
