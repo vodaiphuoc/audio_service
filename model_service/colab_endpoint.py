@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 import ngrok
 import dataclasses
 import json
-
+import itertools
 
 from faster_whisper import WhisperModel, BatchedInferencePipeline
 import torch
@@ -37,8 +37,8 @@ class ModelInference(object):
     def __init__(self):
         single_model = WhisperModel(
             "base", 
-            device="cpu", 
-            compute_type="int8",
+            device="cuda" if torch.cuda.is_available() else "cpu", 
+            compute_type="int8_float16" if torch.cuda.is_available() else "int8",
             download_root=".checkpoints"
         )
         self.model = BatchedInferencePipeline(model=single_model)
@@ -90,19 +90,30 @@ app.add_middleware(CORSMiddleware,
                    allow_headers=["*"]
                    )
 
-async def streaming_segements_result(master_results: List[Generator], _kwarg_list):
-    for seg_generator, kwarg_dict in zip(master_results, _kwarg_list):
-        logger.info('yielding...')
-        for ele in seg_generator:
-            logger.info('yielding segments ...')
-            yield json.dumps({
-                'file_name': kwarg_dict['file_name'],
+def generator_wrapper(file_generator: Generator, file_kwargs: Dict[str,str]):
+    for ele in file_generator:
+        yield json.dumps({
+                'file_name': file_kwargs['file_name'],
                 "seg_dict": {
                     "start": ele.start,
                     "end": ele.end,
                     "text": ele.text
                 }
             })
+
+async def streaming_segements_result(
+        master_results: List[Generator], 
+        _kwarg_list: List[Dict[str,str]]
+    ):
+    gen_warpper_list = [generator_wrapper(
+        file_generator = seg_generator, 
+        file_kwargs = kwarg_dict
+        ) for seg_generator, kwarg_dict 
+        in zip(master_results, _kwarg_list)
+    ]
+
+    for ele in  itertools.chain(*gen_warpper_list):
+        yield ele
     
     logger.info('done yielding ...')
 
