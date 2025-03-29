@@ -92,7 +92,9 @@ app.add_middleware(CORSMiddleware,
 
 async def streaming_segements_result(master_results: List[Generator], _kwarg_list):
     for seg_generator, kwarg_dict in zip(master_results, _kwarg_list):
+        logger.info('yielding...')
         for ele in seg_generator:
+            logger.info('yielding segments ...')
             yield json.dumps({
                 'file_name': kwarg_dict['file_name'],
                 "seg_dict": {
