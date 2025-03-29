@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Dashboard - Transcription System</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', path='css/styles.css') }}" rel="stylesheet">
+</head>
+<body>
+    <!-- Sidebar - Video List -->
+    <div class="sidebar p-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4 class="mb-0">Video Management</h4>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addVideoModal" title="Add new video">
+                <i class="fas fa-plus me-2" aria-hidden="true"></i>Add Video
+            </button>
+        </div>
+        <div class="youtube-url-section mt-4">
+            <label for="youtubeUrlInput" class="form-label">Process YouTube Video</label>
+            <div class="input-group">
+                <input type="text" id="youtubeUrlInput" class="form-control" placeholder="Enter YouTube video URL..." aria-label="YouTube URL">
+                <button class="btn btn-primary" id="processYouTubeBtn" title="Process YouTube Video">
+                    <i class="fas fa-play me-1"></i>Process
+                </button>
+            </div>
+        </div>
+    <br>
+        <div class="search-bar">
+            <input type="text" id="searchInput" name="searchInput" placeholder="Search videos..." class="form-control" aria-label="Search videos">
+        </div>
+
+        <div class="video-list" role="list">
+            <!-- Video items will be loaded here by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Video Player Section -->
+        <!-- Video Player Section với phụ đề mẫu hiển thị bên trong -->
+        <div class="video-container mb-4 position-relative">
+            <!-- Video Player -->
+            <video id="videoPlayer" controls crossorigin="anonymous" poster="/api/placeholder/720/405">
+                <source src="" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            
+            <!-- Phụ đề mẫu overlay - sẽ hiển thị ngay trong video -->
+            <div class="subtitle-overlay">
+                <div class="subtitle-text">
+                    Chào mừng các bạn đến với hướng dẫn về hệ thống chuyển đổi giọng nói thành văn bản.
+                </div>
+            </div>
+            <!-- Các nút điều khiển phụ đề -->
+            <div class="subtitle-controls">
+                <div class="subtitle-timing">00:05 / 10:45</div>
+            </div>
+        </div>
+
+        <!-- CSS cho phụ đề -->
+        <style>
+            .video-container {
+                position: relative;
+                width: 100%;
+                background-color: #000;
+                border-radius: 8px;
+                overflow: hidden;
+            }
+            
+            #videoPlayer {
+                width: 100%;
+                display: block;
+            }
+            
+            .subtitle-overlay {
+                position: absolute;
+                bottom: 70px; /* Vị trí phụ đề - trên các nút điều khiển của video */
+                left: 0;
+                right: 0;
+                text-align: center;
+                z-index: 10;
+                padding: 0 10%;
+            }
+            
+            .subtitle-text {
+                display: inline-block;
+                background-color: rgba(0, 0, 0, 0.7);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 18px;
+                max-width: 80%;
+                text-align: center;
+                line-height: 1.4;
+            }
+            
+            .subtitle-controls {
+                position: absolute;
+                bottom: 8px;
+                right: 8px;
+                background-color: rgba(0, 0, 0, 0.5);
+                border-radius: 4px;
+                padding: 4px 8px;
+                color: white;
+                font-size: 12px;
+                z-index: 20;
+            }
+            
+            /* Phụ đề mới sẽ có animation fade-in */
+            @keyframes subtitleFade {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .subtitle-text {
+                animation: subtitleFade 0.3s ease-out;
+            }
+        </style>
+
+        <div class="mb-3 d-flex justify-content-between align-items-center">
+            <div class="btn-group">
+                <button id="downloadTranscript" class="btn btn-outline-primary" title="Download transcription">
+                    <i class="fas fa-download me-2"></i>Tải phụ đề
+                </button>
+                <button id="toggleSubtitles" class="btn btn-secondary" title="Toggle subtitles">
+                    <i class="fas fa-closed-captioning me-2"></i>Tắt phụ đề
+                </button>
+                <div class="btn-group">
+                    <button class="btn btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-text-height me-1"></i>Cỡ chữ
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#">Nhỏ</a></li>
+                        <li><a class="dropdown-item active" href="#">Vừa</a></li>
+                        <li><a class="dropdown-item" href="#">Lớn</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="dropdown">
+                <button class="btn btn-outline-dark dropdown-toggle" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false" title="Translation settings">
+                    <i class="fas fa-language me-2"></i>Translate
+                </button>
+                <div class="dropdown-menu dropdown-menu-end language-selector" aria-labelledby="settingsDropdown">
+                    <h6 class="dropdown-header">Select Language</h6>
+                    <div class="language-list">
+                        <button class="dropdown-item language-option" data-lang="en">English</button>
+                        <button class="dropdown-item language-option" data-lang="vi">Vietnamese</button>
+                        <button class="dropdown-item language-option" data-lang="zh">Chinese</button>
+                        <button class="dropdown-item language-option" data-lang="ja">Japanese</button>
+                        <button class="dropdown-item language-option" data-lang="ko">Korean</button>
+                        <button class="dropdown-item language-option" data-lang="th">Thai</button>
+                        <button class="dropdown-item language-option" data-lang="fr">French</button>
+                        <button class="dropdown-item language-option" data-lang="de">German</button>
+                        <button class="dropdown-item language-option" data-lang="es">Spanish</button>
+                        <button class="dropdown-item language-option" data-lang="pt">Portuguese</button>
+                        <button class="dropdown-item language-option" data-lang="it">Italian</button>
+                        <button class="dropdown-item language-option" data-lang="ru">Russian</button>
+                        <button class="dropdown-item language-option" data-lang="ar">Arabic</button>
+                        <button class="dropdown-item language-option" data-lang="hi">Hindi</button>
+                        <button class="dropdown-item language-option" data-lang="bn">Bengali</button>
+                        <button class="dropdown-item language-option" data-lang="id">Indonesian</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style>
+        .language-list {
+            max-height: 200px;
+            overflow-y: auto;
+            min-width: 200px;
+        }
+
+        .language-option {
+            cursor: pointer;
+            padding: 8px 16px;
+        }
+
+        .language-option:hover {
+            background-color: #f8f9fa;
+        }
+
+        .language-option.active {
+            background-color: #e9ecef;
+            font-weight: 500;
+        }
+        </style>
+        <!-- Transcription Results -->
+        <div class="transcription-results">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Transcription Result</h5>
+                <div class="d-flex align-items-center gap-2">
+                    <select id="languageSelect" class="form-select form-select-sm" style="width: 140px;">
+                        <option value="">Original Text</option>
+                        <option value="vi">Vietnamese</option>
+                        <option value="en">English</option>
+                        <option value="ja">Japanese</option>
+                        <option value="ko">Korean</option>
+                        <option value="zh">Chinese</option>
+                    </select>
+                    <button id="translateBtn" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-language me-1"></i>Translate
+                    </button>
+                </div>
+            </div>
+            <div id="transcriptionText">
+                <!-- Transcription will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Video Modal -->
+    <div class="modal fade" id="addVideoModal" tabindex="-1" aria-labelledby="addVideoModalLabel">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addVideoModalLabel">Add New Video</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="uploadForm">
+                        <div class="mb-3">
+                            <label for="videoInput" class="form-label">Select Video File</label>
+                            <input type="file" class="form-control" id="videoInput" name="videoInput" accept="video/*">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" title="Cancel upload">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="uploadBtn" title="Upload video">
+                        <i class="fas fa-upload me-1" aria-hidden="true"></i>Upload
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Processing Modal -->
+    <div class="modal fade" id="processingModal" data-bs-backdrop="static" aria-labelledby="processingModalLabel">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body text-center p-4">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 class="mb-2" id="processingModalLabel">Processing Video</h5>
+                    <p class="text-muted mb-0">Please wait while we process your video...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger" id="errorModalLabel">
+                        <i class="fas fa-exclamation-circle me-2" aria-hidden="true"></i>Error
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="errorMessage" class="mb-0"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" title="Close error message">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function formatTimestamp(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+        }
+    </script>
+    <script src="{{ url_for('static', path='js/dashboard.js') }}"></script>
+</body>
+</html>
+</html>

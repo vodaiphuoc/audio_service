@@ -1,0 +1,7 @@
+myenv/
+test_videos/
+*.pyc
+*test*.py
+test_service/
+exp_batch/
+.env
