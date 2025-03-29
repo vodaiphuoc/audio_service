@@ -103,7 +103,8 @@ async def streaming_segements_result(master_results: List[Generator], _kwarg_lis
                     "text": ele.text
                 }
             })
-
+    
+    logger.info('done yielding ...')
 
 @app.post(path= "/",response_class=StreamingResponse)
 async def inference(files: List[UploadFile], request: Request):
