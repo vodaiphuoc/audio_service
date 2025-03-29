@@ -1,7 +1,10 @@
 myenv/
 test_videos/
+__pycache__/
 *.pyc
 *test*.py
 test_service/
 exp_batch/
 .env
+.checkpoints/
+temp_*.*

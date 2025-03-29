@@ -4,19 +4,19 @@ from pathlib import Path
 import asyncio
 from uuid import uuid4
 from fastapi import UploadFile, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 
 from pydantic import BaseModel
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Generator
 from dotenv import load_dotenv
 from loguru import logger
 import uvicorn
 from contextlib import asynccontextmanager
 import ngrok
-
-import asyncio
+import dataclasses
+import json
 
 
 from faster_whisper import WhisperModel, BatchedInferencePipeline
@@ -35,12 +35,17 @@ load_dotenv()
 
 class ModelInference(object):
     def __init__(self):
-        single_model = WhisperModel("base", device="cuda", compute_type="int8_float16")
+        single_model = WhisperModel(
+            "base", 
+            device="cpu", 
+            compute_type="int8",
+            download_root=".checkpoints"
+        )
         self.model = BatchedInferencePipeline(model=single_model)
 
-    async def forward(self, cached_local_path:str, file_name:str):
-        result = self.model.transcribe(cached_local_path)
-        return result
+    async def forward(self, cached_local_path:str, file_name:str)->Generator:
+        segments, info = self.model.transcribe(cached_local_path)
+        return segments
 
 
 NGROK_AUTH_TOKEN = os.environ['NGROK_AUTH_TOKEN']
@@ -85,9 +90,22 @@ app.add_middleware(CORSMiddleware,
                    allow_headers=["*"]
                    )
 
-@app.post(path= "/",response_class=JSONResponse)
+async def streaming_segements_result(master_results: List[Generator], _kwarg_list):
+    for seg_generator, kwarg_dict in zip(master_results, _kwarg_list):
+        for ele in seg_generator:
+            yield json.dumps({
+                'file_name': kwarg_dict['file_name'],
+                "seg_dict": {
+                    "start": ele.start,
+                    "end": ele.end,
+                    "text": ele.text
+                }
+            })
+
+
+@app.post(path= "/",response_class=StreamingResponse)
 async def inference(files: List[UploadFile], request: Request):
-        
+        print('receive files')
         _kwarg_list = []
         for _file_req in files:
             _temp_file_name = f'temp_write_{_file_req.filename}_'+ str(uuid4())+'.mp4'
@@ -102,12 +120,18 @@ async def inference(files: List[UploadFile], request: Request):
             })
 
         tasks = [
-            asyncio.create_task(request.app.model.forward(**_kwargs))
+            request.app.model.forward(**_kwargs)
             for _kwargs in _kwarg_list
         ]
-
+        
         master_results = await asyncio.gather(*tasks)
-        return JSONResponse(master_results)
+
+        print('master results: ', master_results, type(master_results))
+
+        return StreamingResponse(
+            content= streaming_segements_result(master_results,_kwarg_list), 
+            media_type="application/x-ndjson"
+        )
 
 
 async def main():
