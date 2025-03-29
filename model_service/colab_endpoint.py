@@ -144,7 +144,7 @@ async def inference(files: List[UploadFile], request: Request):
 
         return StreamingResponse(
             content= streaming_segements_result(master_results,_kwarg_list), 
-            media_type="application/x-ndjson"
+            media_type="application/json"
         )
 
 
