@@ -8,3 +8,4 @@ exp_batch/
 .env
 .checkpoints/
 temp_*.*
+*.json
