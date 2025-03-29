@@ -24,16 +24,13 @@ import torch
 
 load_dotenv() 
 
-# class ModelResult(BaseModel):
-#     r"""
-#     Output of whisper model for each file
-#     """
-#     file_name: str
-#     text: str
-#     segments: List[Dict[str, Union[float, str, List[int]]]]
-#     language:str
 
 class ModelInference(object):
+    r"""
+    Main class for serving model
+    with whisper model got from `faster_whisper`
+    REF: https://github.com/SYSTRAN/faster-whisper/tree/master
+    """
     def __init__(self):
         single_model = WhisperModel(
             "base", 
@@ -43,7 +40,7 @@ class ModelInference(object):
         )
         self.model = BatchedInferencePipeline(model=single_model)
 
-    async def forward(self, cached_local_path:str, file_name:str)->Generator:
+    async def forward(self, cached_local_path:str)->Generator:
         segments, info = self.model.transcribe(cached_local_path)
         return segments
 
@@ -90,7 +87,13 @@ app.add_middleware(CORSMiddleware,
                    allow_headers=["*"]
                    )
 
-def generator_wrapper(file_generator: Generator, file_kwargs: Dict[str,str]):
+def generator_wrapper(
+        file_generator: Generator, 
+        file_kwargs: Dict[str,str]
+        ):
+    r"""
+    A wrapper of output generator with its corresponding file name
+    """
     for ele in file_generator:
         yield json.dumps({
                 'file_name': file_kwargs['file_name'],
@@ -105,6 +108,10 @@ async def streaming_segements_result(
         master_results: List[Generator], 
         _kwarg_list: List[Dict[str,str]]
     ):
+    r"""
+    Main generator for returning data to main service
+    Merge all generators of all requests files into one generator
+    """
     gen_warpper_list = [generator_wrapper(
         file_generator = seg_generator, 
         file_kwargs = kwarg_dict
@@ -134,14 +141,12 @@ async def inference(files: List[UploadFile], request: Request):
             })
 
         tasks = [
-            request.app.model.forward(**_kwargs)
+            request.app.model.forward(_kwargs['cached_local_path'])
             for _kwargs in _kwarg_list
         ]
         
         master_results = await asyncio.gather(*tasks)
-
-        print('master results: ', master_results, type(master_results))
-
+        
         return StreamingResponse(
             content= streaming_segements_result(master_results,_kwarg_list), 
             media_type="application/x-ndjson"
